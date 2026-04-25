@@ -166,12 +166,6 @@ Sur Windows (PowerShell) :
 minikube -p minikube docker-env | Invoke-Expression
 ```
 
-Sur Linux / macOS :
-
-```bash
-eval $(minikube docker-env)
-```
-
 Ensuite, buildez les images :
 
 ```powershell
@@ -200,8 +194,7 @@ kubectl apply -f k8s/ingress.yaml
 Ajoutez dans votre fichier `hosts` :
 
 ```
-# Windows : C:\Windows\System32\drivers\etc\hosts (ouvrir Notepad en admin)
-# Linux / macOS : /etc/hosts
+# Windows : C:\Windows\System32\drivers\etc\hosts
 127.0.0.1   stock.info
 ```
 
