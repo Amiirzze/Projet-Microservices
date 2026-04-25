@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stock-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: stock.info
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stock-client-service
+                port:
+                  number: 8080

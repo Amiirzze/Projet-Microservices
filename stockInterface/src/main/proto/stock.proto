@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package com.example;
+
+option java_multiple_files = true;
+option java_package = "com.example.lib";
+option java_outer_classname = "StockProto";
+
+service StockService {
+  rpc GetProduct (ProductRequest) returns (ProductReply) {}
+  rpc ManageStock (stream StockOperation) returns (stream StockResult) {}
+}
+
+message ProductRequest {
+  string productId = 1;
+}
+
+message ProductReply {
+  string productId = 1;
+  string name      = 2;
+  int32  quantity  = 3;
+  string status    = 4;
+}
+
+message StockOperation {
+  string productId     = 1;
+  string operationType = 2;
+  int32  quantity      = 3;
+}
+
+message StockResult {
+  string productId   = 1;
+  int32  newQuantity = 2;
+  string message     = 3;
+}

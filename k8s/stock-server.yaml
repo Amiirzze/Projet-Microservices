@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stock-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stock-server
+  template:
+    metadata:
+      labels:
+        app: stock-server
+    spec:
+      serviceAccountName: stock-service-account
+      containers:
+        - name: stock-server
+          image: stock-server:1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9090
+              name: grpc
+            - containerPort: 8081
+              name: http
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stock-server-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+    - name: http
+      port: 8081
+      targetPort: 8081
+  selector:
+    app: stock-server
