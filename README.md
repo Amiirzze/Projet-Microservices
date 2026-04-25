@@ -1,45 +1,62 @@
-# Gestion de Stock — Microservices Kubernetes + gRPC
+# 📦 Gestion de Stock — Infrastructure Kubernetes + gRPC
+
+Ce projet est une application de gestion de stock déployée sur un cluster Kubernetes local (**Minikube**). Il permet de gérer des produits (ajout, retrait, consultation de stock) via une architecture micro-services communicant en **gRPC / Protocol Buffers**, exposée au client HTTP via un **Nginx Ingress Controller**.
+
+**Binôme :** AGAG Abdenour · DOUDOU Amir — Master RSA 2025/2026
+
+---
 
 ## Architecture
 
+- **Service 1 (stock-client)** : Spring Boot — API REST, gateway HTTP vers gRPC.
+- **Service 2 (stock-server)** : Spring Boot — gRPC Server, logique métier + JPA.
+- **Base de données** : PostgreSQL 15 pour la persistance (PersistentVolume 5Gi).
+- **Ingress** : Nginx Ingress Controller (Gateway, host: `stock.info`).
+- **Sécurité** : RBAC Kubernetes (moindre privilège) + Secret Opaque pour les credentials.
+
+Voici le schéma de flux du projet :
+
+```plaintext
+┌─────────────────────────────────────────────────────────────┐
+│                    KUBERNETES (Minikube)                    │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │         NGINX Ingress Controller (Gateway)          │    │
+│  │  ┌───────────────────────────────────────────────┐  │    │
+│  │  │ Routage :                                     │  │    │
+│  │  │ - stock.info / → stock-client-service (:8080) │  │    │
+│  │  └───────────────────────────────────────────────┘  │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                          │                                  │
+│                          ▼                                  │
+│               ┌──────────────────────┐                      │
+│               │  stock-client Pod    │  ← Service 1         │
+│               │  Spring Boot :8080   │    API REST          │
+│               └──────────┬───────────┘                      │
+│                          │                                  │
+│          gRPC / HTTP2 (:9090)                               │
+│          • GetProduct  (appel unaire)                       │
+│          • ManageStock (streaming bidirectionnel)           │
+│                          │                                  │
+│                          ▼                                  │
+│               ┌──────────────────────┐                      │
+│               │  stock-server Pod    │  ← Service 2         │
+│               │  Spring Boot :9090   │    gRPC Server + JPA │
+│               └──────────┬───────────┘                      │
+│                          │                                  │
+│                   JDBC/JPA (:5432)                          │
+│                          │                                  │
+│                          ▼                                  │
+│               ┌──────────────────────┐                      │
+│               │    PostgreSQL 15     │                      │
+│               │      port 5432       │                      │
+│               │  + PersistentVol 5Gi │                      │
+│               └──────────────────────┘                      │
+│                                                             │
+│  [ RBAC : stock-service-account — lecture seule ]           │
+│  [ Secret Opaque : credentials PostgreSQL chiffrés ]        │
+└─────────────────────────────────────────────────────────────┘
 ```
-[Navigateur / curl]
-        │  HTTP  (stock.info)
-        ▼
-┌─────────────────────────────────┐
-│  Nginx Ingress Controller       │
-│  host: stock.info → :8080       │
-└──────────────┬──────────────────┘
-               │  HTTP REST
-               ▼
-      stock-client Pod  (Service 1)
-      Spring Boot :8080
-               │
-               │  gRPC :9090
-               │  • GetProduct     (appel unaire)
-               │  • ManageStock    (streaming bidirectionnel)
-               ▼
-      stock-server Pod  (Service 2)
-      Spring Boot :9090/:8081
-               │  JDBC/JPA :5432
-               ▼
-      postgres Pod  →  PersistentVolume 5Gi
-
-[ RBAC: stock-service-account — lecture seule ]
-```
-
-## Stack technique
-
-| Composant      | Technologie                          |
-|----------------|--------------------------------------|
-| Service 1      | Java 17 / Spring Boot 3.3 / REST API |
-| Service 2      | Java 17 / Spring Boot 3.3 / gRPC     |
-| Communication  | gRPC / Protocol Buffers v3           |
-| Base de données| PostgreSQL 15 + Spring Data JPA      |
-| Orchestration  | Kubernetes (Minikube)                |
-| Build          | Docker multi-stage (gradle:8.5-jdk17)|
-| Ingress        | Nginx Ingress Controller             |
-| Sécurité       | RBAC Kubernetes + Secret Opaque      |
 
 ---
 
@@ -47,81 +64,127 @@
 
 ```
 stock-final/
-├── Dockerfile.server          # Build multi-stage stock-server (sans gradlew local)
-├── Dockerfile.client          # Build multi-stage stock-client (sans gradlew local)
-├── settings.gradle            # Projet multi-module Gradle
-├── deploy.ps1                 # Script déploiement complet Windows PowerShell
-├── cleanup.ps1                # Script nettoyage complet
+├── Dockerfile.server              # Build multi-stage stock-server
+├── Dockerfile.client              # Build multi-stage stock-client
+├── settings.gradle                # Projet multi-module Gradle
+├── deploy.ps1                     # Script déploiement complet
+├── cleanup.ps1                    # Script nettoyage complet
 ├── stockInterface/
-│   ├── build.gradle
 │   └── src/main/proto/
-│       └── stock.proto        # Contrat gRPC (GetProduct + ManageStock)
-├── stockClient/               # Service 1 — REST API → gRPC Client
-│   ├── build.gradle
-│   └── src/main/java/com/example/stockClient/
-│       ├── StockClientApplication.java
-│       ├── service/StockGrpcService.java
-│       ├── web/StockController.java
-│       └── resources/application.properties
-├── stockServer/               # Service 2 — gRPC Server + JPA
-│   ├── build.gradle
-│   └── src/main/java/com/example/stockServer/
-│       ├── StockServerApplication.java
-│       ├── Product.java
-│       ├── ProductRepository.java
+│       └── stock.proto            # Contrat gRPC 
+├── stockClient/                   # Service 1 — REST API + gRPC Client
+│   └── src/main/java/.../
+│       ├── StockController.java
+│       └── StockGrpcService.java
+├── stockServer/                   # Service 2 — gRPC Server + JPA
+│   └── src/main/java/.../
 │       ├── StockServiceImpl.java
-│       ├── HealthController.java
-│       └── resources/application.properties
+│       ├── Product.java
+│       └── ProductRepository.java
 └── k8s/
-    ├── postgres-secret.yaml   # POSTGRES_USER, PASSWORD, DB (Opaque)
-    ├── postgres-storage.yaml  # PV hostPath /mnt/data + PVC 5Gi
-    ├── postgres-deployment.yaml
-    ├── stock-server.yaml      # Deployment + Service ClusterIP (9090+8081)
-    ├── stock-client.yaml      # Deployment + Service NodePort :31280
-    ├── ingress.yaml           # Nginx Ingress host=stock.info
-    └── rbac.yaml              # ServiceAccount + Role + RoleBinding
+    ├── postgres-secret.yaml       # Secret Opaque 
+    ├── postgres-storage.yaml      # PV hostPath + PVC 5Gi
+    ├── postgres-deployment.yaml   # Déploiement PostgreSQL + Service
+    ├── rbac.yaml                  # ServiceAccount + Role + RoleBinding
+    ├── stock-server.yaml          # Déploiement stock-server + Service
+    ├── stock-client.yaml          # Déploiement stock-client + Service
+    └── ingress.yaml               # Nginx Ingress host=stock.info
 ```
 
 ---
 
-## Prérequis
+## Guide de déploiement
 
-- Docker Desktop
-- Minikube : https://minikube.sigs.k8s.io/docs/start
-- kubectl
-- Aucun JDK ni Gradle local requis (build dans Docker)
+- [Lancement Rapide](#lancement-rapide)
+- [Lancement Manuel](#lancement-manuel)
 
 ---
 
-## Déploiement
+### Lancement Rapide
 
-### Option 1 — Script automatisé (recommandé)
+#### 1. Déploiement complet
+
+
+
+Sur Windows (PowerShell) :
 
 ```powershell
-# Windows PowerShell
 .\deploy.ps1
 ```
 
-### Option 2 — Commandes manuelles
+> **Note importante :** Une fois le déploiement terminé, ouvrez un terminal dédié et lancez :
+> ```powershell
+> minikube tunnel
+> ```
+> Puis accédez à l'application via `http://stock.info/`.
+
+#### 2. Nettoyage (garde la persistance)
+
+
+
+Sur Windows (PowerShell) :
 
 ```powershell
-# 1. Démarrer Minikube
+.\cleanup.ps1
+```
+
+---
+
+### Lancement Manuel
+
+#### 1. Prérequis
+
+
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Minikube](https://minikube.sigs.k8s.io/docs/start/)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+
+
+
+#### 2. Démarrage de l'environnement
+
+```powershell
 minikube start
 minikube addons enable ingress
 minikube addons enable ingress-dns
+```
 
-# 2. Créer le répertoire hostPath (OBLIGATOIRE pour le PV PostgreSQL)
+#### 3. Créer le répertoire hostPath (obligatoire pour PostgreSQL)
+
+```powershell
 minikube ssh -- sudo mkdir -p /mnt/data
+```
 
-# 3. Pointer Docker sur Minikube
-minikube -p minikube docker-env | Invoke-Expression   # Windows PowerShell
-# eval $(minikube docker-env)                          # Linux / Mac
+#### 4. Préparation des images Docker (locale)
 
-# 4. Build des images (depuis la racine du projet)
+
+
+Sur Windows (PowerShell) :
+
+```powershell
+minikube -p minikube docker-env | Invoke-Expression
+```
+
+Sur Linux / macOS :
+
+```bash
+eval $(minikube docker-env)
+```
+
+Ensuite, buildez les images :
+
+```powershell
+# Build du Service 2 (gRPC Server)
 docker build -f Dockerfile.server -t stock-server:1 .
-docker build -f Dockerfile.client -t stock-client:1 .
 
-# 5. Déploiement Kubernetes (ordre strict)
+# Build du Service 1 (REST API)
+docker build -f Dockerfile.client -t stock-client:1 .
+```
+
+#### 5. Déploiement des micro-services (ordre strict)
+
+```powershell
 kubectl apply -f k8s/postgres-secret.yaml
 kubectl apply -f k8s/postgres-storage.yaml
 kubectl apply -f k8s/postgres-deployment.yaml
@@ -132,29 +195,23 @@ kubectl apply -f k8s/stock-client.yaml
 kubectl apply -f k8s/ingress.yaml
 ```
 
----
+#### 6. Accès à l'application
 
-## Accès à l'application
-
-### 1. Ajouter dans le fichier hosts
+Ajoutez dans votre fichier `hosts` :
 
 ```
-# Windows : C:\Windows\System32\drivers\etc\hosts  (ouvrir notepad en admin)
-# Linux / Mac : /etc/hosts
+# Windows : C:\Windows\System32\drivers\etc\hosts (ouvrir Notepad en admin)
+# Linux / macOS : /etc/hosts
 127.0.0.1   stock.info
 ```
 
-### 2. Activer le tunnel (laisser ce terminal ouvert)
+Puis dans un terminal dédié (laisser ouvert) :
 
 ```powershell
 minikube tunnel
 ```
 
-### 3. Accéder à l'application
-
-```
-http://stock.info/
-```
+Accès final : [http://stock.info/](http://stock.info/)
 
 ---
 
@@ -164,27 +221,27 @@ http://stock.info/
 # Connectivité inter-service
 curl http://stock.info/
 
-# Ajouter du stock (gRPC streaming bidirectionnel ManageStock)
+# Ajouter du stock (via gRPC ManageStock — streaming bidirectionnel)
 curl.exe -X POST "http://stock.info/api/stock/PROD001/add?quantity=100"
-curl.exe -X POST "http://stock.info/api/stock/PROD002/add?quantity=50"
+# Operation ADD envoyee pour PROD001 (100 unites)
 
-# Consulter un produit (gRPC appel unaire GetProduct)
+curl.exe -X POST "http://stock.info/api/stock/PROD002/add?quantity=50"
+# Operation ADD envoyee pour PROD002 (50 unites)
+
+# Consulter un produit (via gRPC GetProduct — appel unaire)
 curl.exe http://stock.info/api/stock/PROD001
 # {"productId":"PROD001","name":"Produit-PROD001","quantity":100,"status":"AVAILABLE"}
 
 # Retirer du stock
 curl.exe -X POST "http://stock.info/api/stock/PROD001/remove?quantity=30"
 curl.exe http://stock.info/api/stock/PROD001
-# {"quantity":70,"status":"AVAILABLE"}
+# {"productId":"PROD001","quantity":70,"status":"AVAILABLE"}
 
 # Produit inexistant
 curl.exe http://stock.info/api/stock/INCONNU
-# {"quantity":0,"status":"NOT_FOUND"}
+# {"productId":"INCONNU","quantity":0,"status":"NOT_FOUND"}
 ```
 
-> Sur Windows PowerShell, utiliser `curl.exe` (et non `curl`).
-
----
 
 ## Vérifications Kubernetes
 
@@ -192,10 +249,10 @@ curl.exe http://stock.info/api/stock/INCONNU
 # Pods (tous Running 1/1)
 kubectl get pods
 
-# Services
+# Services et ports
 kubectl get svc -o wide
 
-# PVC (doit être Bound)
+# PVC (doit être Bound, 5Gi)
 kubectl get pvc
 
 # Secret (valeurs masquées)
@@ -204,28 +261,9 @@ kubectl describe secret postgres-secret
 # Ingress
 kubectl describe ingress stock-ingress
 
-# RBAC — principe du moindre privilège
+# RBAC — validation du principe du moindre privilège
 kubectl auth can-i get pods    --as=system:serviceaccount:default:stock-service-account  # yes
 kubectl auth can-i delete pods --as=system:serviceaccount:default:stock-service-account  # no
-```
 
----
 
-## Nettoyage complet
 
-```powershell
-.\cleanup.ps1
-```
-
----
-
-## Barème
-
-| Critère                   | Implémentation                                    | Note     |
-|---------------------------|---------------------------------------------------|----------|
-| 1 service + Docker + K8s  | stock-client + Dockerfile multi-stage + Deployment| 10/20    |
-| Ingress gateway           | Nginx Ingress — host: stock.info                  | 12/20    |
-| 2ème service relié        | stock-server gRPC + communication inter-service   | 14/20    |
-| Base de données + PVC     | PostgreSQL 15 + PVC 5Gi (hostPath Minikube)       | 16/20    |
-| RBAC + Secrets            | stock-service-account + postgres-secret Opaque    | 18/20    |
-| gRPC (bonus)              | GetProduct (unaire) + ManageStock (streaming)     | +bonus   |
